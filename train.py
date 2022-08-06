@@ -118,12 +118,14 @@ def train(epoch: int,
     with tqdm(loader, unit='batch') as iter:
         iter.set_description(f'Train {epoch}')
 
-        for source, target, labels, source_mask, target_mask in iter:
+        for source, target, source_self, labels, labels_self, source_mask, target_mask, source_self_mask in iter:
             # feed forward
-            logits = model(source, target, source_mask, target_mask)
+            logits, logits_self = model(source, target, source_self, source_mask, target_mask, source_self_mask)
 
             # loss calculation
-            loss = loss_func(logits, labels)
+            loss_translate = loss_func(logits, labels)
+            loss_self = loss_func(logits_self, labels_self)
+            loss = loss_translate + loss_self
             total_loss += loss.item()
             iter.set_postfix(loss=loss.item())
 
@@ -155,13 +157,15 @@ def validate(epoch: int,
     with tqdm(loader, unit='batch') as iter:
         iter.set_description(f'Valid {epoch}')
 
-        for source, target, labels, source_mask, target_mask in iter:
+        for source, target, source_self, labels, labels_self, source_mask, target_mask, source_self_mask in iter:
             with torch.no_grad():
                 # feed forward
-                logits = model(source, target, source_mask, target_mask)
+                logits, logits_self = model(source, target, source_self, source_mask, target_mask, source_self_mask)
 
                 # loss calculation
-                loss = loss_func(logits, labels)
+                loss_translate = loss_func(logits, labels)
+                loss_self = loss_func(logits_self, labels_self)
+                loss = loss_translate + loss_self
                 total_loss += loss.item()
 
             iter.set_postfix(loss=loss.item())

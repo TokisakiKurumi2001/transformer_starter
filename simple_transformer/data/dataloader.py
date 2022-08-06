@@ -27,22 +27,29 @@ def make_dataloader(dataset: IterableDataset,
     def collate_fn(batch: List[Tuple[str, str]]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         source_tokens = []
         target_tokens = []
+        source_self_tokens = []
         for i, (source_sentence, target_sentence) in enumerate(batch):
             source_tokens.append(Tensor(source_vocab(source_sentence)))
+            source_self_tokens.append(Tensor([SOS_IDX] + source_vocab(source_sentence) + [EOS_IDX]))
             target_tokens.append(Tensor([SOS_IDX] + target_vocab(target_sentence) + [EOS_IDX]))
 
         # Pad with PAD_IDX up to the max sentence length (within the batch)
         source = pad_sequence(source_tokens, batch_first=True, padding_value=PAD_IDX)
+        source_self = pad_sequence(source_self_tokens, batch_first=True, padding_value=PAD_IDX)
         target = pad_sequence(target_tokens, batch_first=True, padding_value=PAD_IDX)
 
         labels = target[:, 1:]  # Target Labels  =       Target_Sentence_Token_Indices + EOS
         target = target[:, :-1] # Decoder Inputs = SOS + Target_Sentence_Token_Indices       # aka Outputs (right shifted)
 
+        labels_self = source_self[:, 1: ] # Source Labels  =       Source_Sentence_Token_Indices + EOS
+        source_self = source_self[:, :-1] # Decoder Inputs = SOS + Source_Sentence_Token_Indices       # aka Outputs (right shifted)
+
         # Mask indicates where to ignore while calculating attention values
         source_mask, target_mask = create_masks(source, target)
+        _, source_self_mask = create_masks(source, source_self)
 
         # move to the device
-        return [x.to(device) for x in [source, target, labels, source_mask, target_mask]]
+        return [x.to(device) for x in [source, target, source_self, labels, labels_self, source_mask, target_mask, source_self_mask]]
 
     return DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
 

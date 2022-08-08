@@ -1,5 +1,5 @@
 !include data.multi30k.de-en.yaml
-!include transformer.small.yaml
+!include transformer.base.yaml
 
 epochs: 20
 batch_size: 32

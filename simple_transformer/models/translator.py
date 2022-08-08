@@ -15,8 +15,9 @@ class Translator:
         self.target_vocab = target_vocab
         self.output_length_extra = output_length_extra
 
-    def __call__(self, text: str) -> str:
+    def __call__(self, text: str) -> (str, str):
         """ Use Encoder to extract features from the input sentence and decode using translation decoder.
+        However, we have 2 decoders, so there will be 2 sequence generated
         """
         self.model.eval()
         with torch.no_grad():
@@ -29,7 +30,7 @@ class Translator:
 
             return self.decode(encoder_output, max_output_length)
 
-    def decode(self, text: str) -> str:
+    def decode(self, text: str) -> (str, str):
         raise Exception('You must implement decode!')
 
 
@@ -49,25 +50,30 @@ class GreedyTranslator(Translator):
                  output_length_extra: int) -> None:
         super().__init__(model, source_vocab, target_vocab, output_length_extra)
 
-    def decode(self, encoder_output: Tensor, max_output_length: int) -> str:
-        # Start with SOS
-        decoder_input = torch.Tensor([[SOS_IDX]]).long()
+    def decode(self, encoder_output: Tensor, max_output_length: int) -> (str, str):
+        def decode_strategy(decode_fn, encoder_output: Tensor, max_output_length: int):
+            # Start with SOS
+            decoder_input = torch.Tensor([[SOS_IDX]]).long()
+            for _ in range(max_output_length):
+                # Decoder prediction
+                # logits = self.model.decode(encoder_output, decoder_input)
+                logits = decode_fn(encoder_output, decoder_input)
 
-        for _ in range(max_output_length):
-            # Decoder prediction
-            logits = self.model.decode(encoder_output, decoder_input)
+                # Greedy selection
+                token_index = torch.argmax(logits[:, -1], keepdim=True)
+                if token_index.item()==EOS_IDX: # EOS is most probable => Exit
+                    break
 
-            # Greedy selection
-            token_index = torch.argmax(logits[:, -1], keepdim=True)
-            if token_index.item()==EOS_IDX: # EOS is most probable => Exit
-                break
+                # Next Input to Decoder
+                decoder_input = torch.cat([decoder_input, token_index], dim=1)
 
-            # Next Input to Decoder
-            decoder_input = torch.cat([decoder_input, token_index], dim=1)
-
-        # text tokens from a batch with one input excluding SOS
-        decoder_output = decoder_input[0, 1:].numpy()
-        return [self.target_vocab.tokens[i] for i in decoder_output]
+            # text tokens from a batch with one input excluding SOS
+            decoder_output = decoder_input[0, 1:].numpy()
+            return decoder_output
+        
+        target = decode_strategy(self.model.decode, encoder_output, max_output_length)
+        self_seq = decode_strategy(self.model.decode_self, encoder_output, max_output_length)
+        return [self.target_vocab.tokens[i] for i in target], [self.source_vocab.tokens[i] for i in self_seq]
 
 
 class BeamSearchTranslator(Translator):
@@ -83,51 +89,55 @@ class BeamSearchTranslator(Translator):
         self.beam_size = beam_size
         self.alpha = alpha # sequence length penalty
 
-    def decode(self, encoder_output: Tensor, max_output_length: int) -> str:
-        # Start with SOS
-        decoder_input = torch.Tensor([[SOS_IDX]]).long()
-        scores = torch.Tensor([0.])
-        vocab_size = len(self.target_vocab)
-        for i in range(max_output_length):
-            # Encoder output expansion from the second time step to the beam size
-            if i==1:
-                encoder_output = encoder_output.expand(self.beam_size, *encoder_output.shape[1:])
+    def decode(self, encoder_output: Tensor, max_output_length: int) -> (str, str):
+        def decode_strategy(decode_fn, encoder_output: Tensor, max_output_length: int, vocab_size):
+            # Start with SOS
+            decoder_input = torch.Tensor([[SOS_IDX]]).long()
+            scores = torch.Tensor([0.])
+            for i in range(max_output_length):
+                # Encoder output expansion from the second time step to the beam size
+                if i==1:
+                    encoder_output = encoder_output.expand(self.beam_size, *encoder_output.shape[1:])
 
-            # Decoder prediction
-            logits = self.model.decode(encoder_output, decoder_input)
-            logits = logits[:, -1] # Last sequence step: [beam_size, sequence_length, vocab_size] => [beam_size, vocab_size]
+                # Decoder prediction
+                logits = decode_fn(encoder_output, decoder_input)
+                logits = logits[:, -1] # Last sequence step: [beam_size, sequence_length, vocab_size] => [beam_size, vocab_size]
 
-            # Softmax
-            log_probs = torch.log_softmax(logits, dim=1)
-            log_probs = log_probs / sequence_length_penalty(i+1, self.alpha)
+                # Softmax
+                log_probs = torch.log_softmax(logits, dim=1)
+                log_probs = log_probs / sequence_length_penalty(i+1, self.alpha)
 
-            # Update score where EOS has not been reched
-            log_probs[decoder_input[:, -1]==EOS_IDX, :] = 0
-            scores = scores.unsqueeze(1) + log_probs # scores [beam_size, 1], log_probs [beam_size, vocab_size]
+                # Update score where EOS has not been reched
+                log_probs[decoder_input[:, -1]==EOS_IDX, :] = 0
+                scores = scores.unsqueeze(1) + log_probs # scores [beam_size, 1], log_probs [beam_size, vocab_size]
 
-            # Flatten scores from [beams, vocab_size] to [beams * vocab_size] to get top k, and reconstruct beam indices and token indices
-            scores, indices = torch.topk(scores.reshape(-1), self.beam_size)
-            beam_indices  = torch.divide   (indices, vocab_size, rounding_mode='floor') # indices // vocab_size
-            token_indices = torch.remainder(indices, vocab_size)                        # indices %  vocab_size
+                # Flatten scores from [beams, vocab_size] to [beams * vocab_size] to get top k, and reconstruct beam indices and token indices
+                scores, indices = torch.topk(scores.reshape(-1), self.beam_size)
+                beam_indices  = torch.divide(indices, vocab_size, rounding_mode='floor') # indices // vocab_size
+                token_indices = torch.remainder(indices, vocab_size)                        # indices %  vocab_size
 
-            # Build the next decoder input
-            next_decoder_input = []
-            for beam_index, token_index in zip(beam_indices, token_indices):
-                prev_decoder_input = decoder_input[beam_index]
-                if prev_decoder_input[-1]==EOS_IDX:
-                    token_index = EOS_IDX # once EOS, always EOS
-                token_index = torch.LongTensor([token_index])
-                next_decoder_input.append(torch.cat([prev_decoder_input, token_index]))
-            decoder_input = torch.vstack(next_decoder_input)
+                # Build the next decoder input
+                next_decoder_input = []
+                for beam_index, token_index in zip(beam_indices, token_indices):
+                    prev_decoder_input = decoder_input[beam_index]
+                    if prev_decoder_input[-1]==EOS_IDX:
+                        token_index = EOS_IDX # once EOS, always EOS
+                    token_index = torch.LongTensor([token_index])
+                    next_decoder_input.append(torch.cat([prev_decoder_input, token_index]))
+                decoder_input = torch.vstack(next_decoder_input)
 
-            # If all beams are finished, exit
-            if (decoder_input[:, -1]==EOS_IDX).sum() == self.beam_size:
-                break
+                # If all beams are finished, exit
+                if (decoder_input[:, -1]==EOS_IDX).sum() == self.beam_size:
+                    break
 
-        # convert the top scored sequence to a list of text tokens
-        decoder_output, _ = max(zip(decoder_input, scores), key=lambda x: x[1])
-        decoder_output = decoder_output[1:].numpy() # remove SOS
-        return [self.target_vocab.tokens[i] for i in decoder_output if i != EOS_IDX] # remove EOS if exists
+            # convert the top scored sequence to a list of text tokens
+            decoder_output, _ = max(zip(decoder_input, scores), key=lambda x: x[1])
+            decoder_output = decoder_output[1:].numpy() # remove SOS
+            return decoder_output
+
+        target = decode_strategy(self.model.decode, encoder_output.clone(), max_output_length, len(self.target_vocab))
+        self_seq = decode_strategy(self.model.decode_self, encoder_output.clone(), max_output_length, len(self.source_vocab))
+        return [self.target_vocab.tokens[i] for i in target if i != EOS_IDX], [self.source_vocab.tokens[i] for i in self_seq if i != EOS_IDX] # remove EOS if exists
 
 
 def sequence_length_penalty(length: int, alpha: float) -> float:

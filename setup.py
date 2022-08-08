@@ -12,7 +12,10 @@ setup(
    name='simple_transformer',
    version='0.1',
    description='A simple transformer implementation',
-   author='Naoki Shibuya',
+   author='Le Minh Khoi',
    packages=['simple_transformer'],
    install_requires=install_requires,
+   dependency_links=[
+    'https://download.pytorch.org/whl/cu113/'
+    ]
 )

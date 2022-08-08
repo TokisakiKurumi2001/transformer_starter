@@ -45,11 +45,16 @@ def main() -> None:
     test_dataset = T.load_dataset(split='test', **config.dataset)
     outputs = []
     targets = []
+    self_outputs = []
+    sources = []
     for source_text, target_text in tqdm(test_dataset):
-        output = translator(source_text)
+        output, self_output = translator(source_text)
         target = [target_vocab.tokenize(target_text)]
+        source = [source_vocab.tokenize(source_text)]
         outputs.append(output)
+        self_outputs.append(self_output)
         targets.append(target)
+        sources.append(source)
 
         if args.verbose:
             sentence = handle_spaces(output, target_vocab)
@@ -59,6 +64,8 @@ def main() -> None:
     # Compute BLEU score
     score = bleu_score(outputs, targets)
     print(f'BLEU score: {score}')
+    self_score = bleu_score(self_outputs, sources)
+    print(f'Self BLEU score: {self_score}')
 
 
 def handle_spaces(output: List[str], target_vocab: Vocab) -> str:

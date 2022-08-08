@@ -10,9 +10,12 @@ with open(requirements_path) as f:
 
 setup(
    name='simple_transformer',
-   version='0.1',
+   version='0.2',
    description='A simple transformer implementation',
-   author='Naoki Shibuya',
+   author='Le Minh Khoi',
    packages=['simple_transformer'],
    install_requires=install_requires,
+   dependency_links=[
+    'https://download.pytorch.org/whl/cu113/'
+    ]
 )

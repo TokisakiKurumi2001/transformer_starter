@@ -7,7 +7,7 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import simple_transformer as T
 
 
@@ -42,8 +42,8 @@ def main() -> None:
         config.model.name
     ])
     log_dir = os.path.join('runs', experiment_name)
-    writer = SummaryWriter(log_dir)
-    writer.add_text('config', f'<pre>{config}</pre>')
+    # writer = SummaryWriter(log_dir)
+    # writer.add_text('config', f'<pre>{config}</pre>')
 
     # keep the copy of config for this training
     config.save(os.path.join(log_dir, 'config.yaml'))
@@ -85,14 +85,14 @@ def main() -> None:
         # train
         train_dataset = T.load_dataset(split='train', **config.dataset)
         train_loader = T.make_dataloader(train_dataset, source_vocab, target_vocab, config.batch_size, device)
-        train_loss = train(epoch, model, train_loader, train_loss_func, optimizer, scheduler, writer)
-        writer.add_scalar('train/loss', train_loss, epoch)
+        train_loss = train(epoch, model, train_loader, train_loss_func, optimizer, scheduler)
+        # writer.add_scalar('train/loss', train_loss, epoch)
 
         # validate
         val_dataset = T.load_dataset(split='valid', **config.dataset)
         val_loader = T.make_dataloader(val_dataset, source_vocab, target_vocab, config.batch_size, device)
         val_loss = validate(epoch, model, val_loader, valid_loss_func)
-        writer.add_scalar('val/loss', val_loss, epoch)
+        # writer.add_scalar('val/loss', val_loss, epoch)
 
         # save the model per epoch
         model_save_path = os.path.join(log_dir, f'checkpoint-{epoch:03d}-{val_loss:0.4f}.pt')
@@ -109,7 +109,7 @@ def train(epoch: int,
           loss_func: torch.nn.Module,
           optimizer: torch.optim.Optimizer,
           scheduler: torch.optim.lr_scheduler._LRScheduler,
-          writer: SummaryWriter) -> float:
+        ) -> float:
     model.train()
 
     total_loss = 0
@@ -134,8 +134,8 @@ def train(epoch: int,
 
             # learning rate scheduler
             if scheduler is not None:
-                for i, lr in enumerate(scheduler.get_last_lr()):
-                    writer.add_scalar(f'train/lr-{i}', lr, scheduler._step_count)
+                # for i, lr in enumerate(scheduler.get_last_lr()):
+                    # writer.add_scalar(f'train/lr-{i}', lr, scheduler._step_count)
                 scheduler.step()
 
     # average training loss

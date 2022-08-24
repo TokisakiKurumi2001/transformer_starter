@@ -57,7 +57,7 @@ class GreedyTranslator(Translator):
             for _ in range(max_output_length):
                 # Decoder prediction
                 # logits = self.model.decode(encoder_output, decoder_input)
-                logits = decode_fn(encoder_output, decoder_input)
+                logits, _ = decode_fn(encoder_output, decoder_input)
 
                 # Greedy selection
                 token_index = torch.argmax(logits[:, -1], keepdim=True)
@@ -100,7 +100,7 @@ class BeamSearchTranslator(Translator):
                     encoder_output = encoder_output.expand(self.beam_size, *encoder_output.shape[1:])
 
                 # Decoder prediction
-                logits = decode_fn(encoder_output, decoder_input)
+                logits, _ = decode_fn(encoder_output, decoder_input)
                 logits = logits[:, -1] # Last sequence step: [beam_size, sequence_length, vocab_size] => [beam_size, vocab_size]
 
                 # Softmax

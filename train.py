@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 # from torch.utils.tensorboard import SummaryWriter
 import simple_transformer as T
+from geomloss import SamplesLoss
 
 
 def main() -> None:
@@ -110,6 +111,7 @@ def train(epoch: int,
           optimizer: torch.optim.Optimizer,
           scheduler: torch.optim.lr_scheduler._LRScheduler,
           ) -> float:
+    ot_loss_func = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
     model.train()
 
     total_loss = 0
@@ -120,12 +122,13 @@ def train(epoch: int,
 
         for source, target, source_self, labels, labels_self, source_mask, target_mask, source_self_mask in iter:
             # feed forward
-            logits, logits_self = model(source, target, source_self, source_mask, target_mask, source_self_mask)
+            logits, logits_self, y_raw, x_raw = model(source, target, source_self, source_mask, target_mask, source_self_mask)
 
             # loss calculation
             loss_translate = loss_func(logits, labels)
             loss_self = loss_func(logits_self, labels_self)
-            loss = loss_translate + loss_self
+            ot_loss = ot_loss_func(y_raw, x_raw).mean()
+            loss = loss_translate + loss_self + 0.1 * ot_loss
             total_loss += loss.item()
             iter.set_postfix(loss=loss.item())
 
@@ -149,6 +152,7 @@ def validate(epoch: int,
              model: nn.Module,
              loader: DataLoader,
              loss_func: torch.nn.Module) -> float:
+    ot_loss_func = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
     model.eval()
 
     total_loss = 0
@@ -160,12 +164,13 @@ def validate(epoch: int,
         for source, target, source_self, labels, labels_self, source_mask, target_mask, source_self_mask in iter:
             with torch.no_grad():
                 # feed forward
-                logits, logits_self = model(source, target, source_self, source_mask, target_mask, source_self_mask)
+                logits, logits_self, y_raw, x_raw = model(source, target, source_self, source_mask, target_mask, source_self_mask)
 
                 # loss calculation
                 loss_translate = loss_func(logits, labels)
                 loss_self = loss_func(logits_self, labels_self)
-                loss = loss_translate + loss_self
+                ot_loss = ot_loss_func(y_raw, x_raw).mean()
+                loss = loss_translate + loss_self + 0.1 * ot_loss
                 total_loss += loss.item()
 
             iter.set_postfix(loss=loss.item())

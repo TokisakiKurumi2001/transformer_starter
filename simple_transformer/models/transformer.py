@@ -42,9 +42,9 @@ class Transformer(nn.Module):
 
     def forward(self, x: Tensor, y: Tensor, x_self: Tensor, x_mask: Tensor = None, y_mask: Tensor = None, x_self_mask: Tensor = None) -> Tensor:
         x = self.encode(x, x_mask)
-        y = self.decode(x, y, x_mask, y_mask)
-        x_self = self.decode_self(x, x_self, x_mask, x_self_mask)
-        return y, x_self
+        y, y_raw = self.decode(x, y, x_mask, y_mask)
+        x_self, x_self_raw = self.decode_self(x, x_self, x_mask, x_self_mask)
+        return y, x_self, y_raw, x_self_raw
 
     def encode(self, x: Tensor, x_mask: Tensor = None) -> Tensor:
         x = self.input_embedding(x)
@@ -56,10 +56,10 @@ class Transformer(nn.Module):
         y = self.output_embedding(y)
         y = self.output_pos_encoding(y)
         y = self.decoder(x, x_mask, y, y_mask)
-        return self.projection(y)
+        return self.projection(y), y
 
     def decode_self(self, x: Tensor, x_self: Tensor, x_mask: Tensor = None, x_self_mask: Tensor = None) -> Tensor:
         x_self = self.input_embedding(x_self)
         x_self = self.input_pos_encoding(x_self)
         x_self = self.decoder_self(x, x_mask, x_self, x_self_mask)
-        return self.projection_self(x_self)
+        return self.projection_self(x_self), x_self
